@@ -40,10 +40,14 @@ namespace IngameScript
 
         //Optional Blocks
         public IMySoundBlock ALARM_sound;
+        public bool Has_Sound;
+
         public IMyLightingBlock ALARM_light;
+        public bool Has_Light;
+
         public bool ALARM_active;
 
-        
+
         public List<Missile> MISSILES = new List<Missile>();
         public int MissileRemaining;
         public int MergeRefresh;
@@ -60,12 +64,15 @@ namespace IngameScript
             Program_Local = this;
             _targettingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
+
+
             ALARM_sound = GridTerminalSystem.GetBlockWithName("Lock Sound Indicator") as IMySoundBlock;
+            Has_Sound = ALARM_sound != null;
             ALARM_light = GridTerminalSystem.GetBlockWithName("Lock Light Indicator") as IMyLightingBlock;
             Has_Light = ALARM_light != null;
 
             MergeRefresh = 0;
-            
+
             SETUP_OptionalBlocks();
             SETUP_ControlBlocks();
         }
@@ -107,16 +114,17 @@ namespace IngameScript
 
             //Arguments
             if (argument.ToLower().Trim() == "launch" && haveWaypoint) INIT_NEXT_MISSILE();
-            
+
             if (argument.ToLower().Trim() == "refresh") Refresh();
-            
+
             if (argument.ToLower().Trim() == "dispose") DisposeAll();
-            
-            
+
+
             for (int i = 0; i < MISSILES.Count; i++)
             {
                 Missile thisMissile = MISSILES[i];
                 thisMissile.TARGETPOS = targetPos;
+                thisMissile.Check_Detonate();
                 thisMissile.Run_Guidance();
 
                 if (thisMissile.RequireDispose())
@@ -158,21 +166,28 @@ namespace IngameScript
         {
             if (isActive)
             {
-                
-                ALARM_light.Color = Color.Red;
-                ALARM_light.BlinkIntervalSeconds = 1;
+                if (Has_Light)
+                {
+                    ALARM_light.Color = Color.Red;
+                    ALARM_light.BlinkIntervalSeconds = 1;
+                }
+
                 if (!ALARM_active)
                 {
-                    ALARM_sound.Play();
+
+                    if (Has_Sound) ALARM_sound.Play();
                     ALARM_active = true;
                 }
             }
             else
             {
-                ALARM_light.Color = Color.Green;
-                ALARM_light.BlinkIntervalSeconds = 0;
+                if (Has_Light)
+                {
+                    ALARM_light.Color = Color.Green;
+                    ALARM_light.BlinkIntervalSeconds = 0;
+                }
 
-                ALARM_sound.Stop();
+                if (Has_Sound) ALARM_sound.Stop();
                 ALARM_active = false;
             }
         }
@@ -184,6 +199,7 @@ namespace IngameScript
             _targettingBlock.TargetPriority = OffensiveCombatTargetPriority.Largest;
             _targettingBlock.SearchEnemyComponent.TargetingLockOptions = MyGridTargetingRelationFiltering.Enemy;
             _targettingBlock.SetValue<long>("OffensiveCombatIntercept_GuidanceType", 0);
+            _targettingBlock.SetValue<long>("TargetingGroup", 1);
             _targettingBlock.ApplyAction("ActivateBehavior_On");
 
             _flightControl.Enabled = false;
@@ -197,17 +213,20 @@ namespace IngameScript
         }
         void SETUP_OptionalBlocks()
         {
-            ALARM_light.Enabled = true;
-            ALARM_light.Radius = 3f;
-            ALARM_light.BlinkIntervalSeconds = 0;
-            ALARM_light.BlinkLength = 50;
-
-            ALARM_sound.Range = 25;
-            ALARM_sound.Volume = 100;
-            ALARM_sound.SelectedSound = "Alert 1";
-            ALARM_sound.LoopPeriod = 1800;
-
-
+            if (ALARM_light != null)
+            {
+                ALARM_light.Enabled = true;
+                ALARM_light.Radius = 3f;
+                ALARM_light.BlinkIntervalSeconds = 0;
+                ALARM_light.BlinkLength = 50;
+            }
+            if (ALARM_sound != null)
+            {
+                ALARM_sound.Range = 25;
+                ALARM_sound.Volume = 100;
+                ALARM_sound.SelectedSound = "Alert 1";
+                ALARM_sound.LoopPeriod = 1800;
+            }
         }
         bool INIT_NEXT_MISSILE()
         {
@@ -228,15 +247,51 @@ namespace IngameScript
                 return true;
             }
         }
-        
-        
+
+
         //Give Function To Module
         public class RadarModule
         {
 
         }
+        public class Config
+        {
+            private readonly string CONFIGSTRING;
+            private readonly string[] CONFIGARR;
+            Config(string configStr)
+            {
+                CONFIGSTRING = configStr;
+                CONFIGARR = configStr.Split('\n');
+            }
+            void ParseFull()
+            {
+
+            }
+            void ParseLine(string line)
+            {
+
+            }
+            Type ParseType(string lineType)
+            {
+                Type type;
+                switch(lineType)
+                {
+                    case "float":
+                        type = typeof(float); break;
+                    case "int":
+                        type = typeof(int); break;
+                    case "bool":
+                        type = typeof(bool); break;
+                    default:
+                        return null;
+                    
+                }
+                return type;
+            }
+        }
         public class Missile
         {
+            #region Missile Variables
             //Missile Root
             public IMyShipMergeBlock MERGE;
 
@@ -247,6 +302,7 @@ namespace IngameScript
 
             //Optional Missile Blocks
             public List<IMyWarhead> WARHEADS = new List<IMyWarhead>(); //recommend warheads
+            public List<IMyBatteryBlock> BATTERIES = new List<IMyBatteryBlock>();
             public IMyShipConnector CONNECTOR;
             public List<IMyGasTank> TANKS = new List<IMyGasTank>();
 
@@ -266,7 +322,7 @@ namespace IngameScript
             const double GravityAggressiveness = 5.0;
 
             //Launch Variables
-                //const int IGNITE_DELAY = 5;
+            //const int IGNITE_DELAY = 5;
             const int GUIDANCE_DELAY = 45;
             public int LAUNCH_TIMER = 0;
 
@@ -298,7 +354,7 @@ namespace IngameScript
             {
                 get { return GetMaxThrust(THRUSTERS) / Math.Max(1.0, (REMOTE?.CalculateShipMass().TotalMass ?? 1.0)); }
             }
-
+            #endregion
 
 
             //Missile Boot
@@ -308,7 +364,7 @@ namespace IngameScript
                 GridViewAtLaunch = gridViewAtLaunch;
                 MERGE.Enabled = false;
             }
-
+            #region Setup
             void SETUP_FilterBlocksOnMissileGrid()
             {
                 IMyCubeGrid localGrid = MERGE.CubeGrid;
@@ -324,6 +380,7 @@ namespace IngameScript
                     else if (item is IMyWarhead) WARHEADS.Add(item as IMyWarhead);
                     else if (item is IMyShipConnector && CONNECTOR == null) CONNECTOR = item as IMyShipConnector;
                     else if (item is IMyGasTank) TANKS.Add(item as IMyGasTank);
+                    else if (item is IMyBatteryBlock) BATTERIES.Add(item as IMyBatteryBlock);
                 }
             }
             void SETUP_SetDefaultBlockBehavior()
@@ -334,7 +391,7 @@ namespace IngameScript
                     IMyFunctionalBlock function = item as IMyFunctionalBlock;
                     if (function != null) function.Enabled = true;
                 }
-
+                foreach (var b in BATTERIES) b.ChargeMode = ChargeMode.Discharge;
                 MERGE.Enabled = false;
 
                 //Set warheads to safe
@@ -354,6 +411,7 @@ namespace IngameScript
                 foreach (IMyThrust thrust in THRUSTERS) thrust.Enabled = true;
                 THRUSTPERCENTAGE = 1;
             }
+            #endregion
             public void InitializePostDetach()
             {
                 SETUP_FilterBlocksOnMissileGrid();
@@ -391,17 +449,6 @@ namespace IngameScript
                     if (TARGETDISTANCE <= DMS_Distance) foreach (var w in WARHEADS) w.IsArmed = true;
                     if (TARGETDISTANCE <= PROX_Distance) WARHEADS[0].Detonate();
                 }
-            }
-
-            public double GetMaxThrust(List<IMyThrust> thrusters)
-            {
-                double thrust = 0;
-                foreach (var t in thrusters)
-                {
-                    if (t == null || !t.IsFunctional) continue;
-                    thrust += t.MaxEffectiveThrust;
-                }
-                return thrust;
             }
             public void TurnGyro6(Vector3D _targetVector, IMyTerminalBlock _ref, IMyGyro _gyro, double _gain, double _dampingGain, double _currPitch, double _currYaw, out double _newPitch, out double _newYaw)
             {
@@ -469,7 +516,6 @@ namespace IngameScript
 
                 LAUNCH_TIMER++;
                 if (LAUNCH_TIMER < GUIDANCE_DELAY) return;
-                Check_Detonate();
 
                 double dt = DT();
 
