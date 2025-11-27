@@ -62,6 +62,8 @@ namespace IngameScript
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
             ALARM_sound = GridTerminalSystem.GetBlockWithName("Lock Sound Indicator") as IMySoundBlock;
             ALARM_light = GridTerminalSystem.GetBlockWithName("Lock Light Indicator") as IMyLightingBlock;
+            Has_Light = ALARM_light != null;
+
             MergeRefresh = 0;
             
             SETUP_OptionalBlocks();
@@ -69,11 +71,18 @@ namespace IngameScript
         }
         public void Refresh()
         {
-            MergeRefresh = 0;
             _targettingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
 
-            SETUP_OptionalBlocks() ;
+
+            ALARM_sound = GridTerminalSystem.GetBlockWithName("Lock Sound Indicator") as IMySoundBlock;
+            Has_Sound = ALARM_sound != null;
+            ALARM_light = GridTerminalSystem.GetBlockWithName("Lock Light Indicator") as IMyLightingBlock;
+            Has_Light = ALARM_light != null;
+
+            MergeRefresh = 0;
+
+            SETUP_OptionalBlocks();
             SETUP_ControlBlocks();
         }
         public void Main(string argument, UpdateType updateSource)
