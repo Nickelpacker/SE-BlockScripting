@@ -36,8 +36,8 @@ namespace IngameScript
             _controller = GridTerminalSystem.GetBlockWithName("Main Cockpit") as IMyShipController;
             _elevation = GridTerminalSystem.GetBlockWithName("Elevation Rotor") as IMyMotorStator;
             _azimuth = GridTerminalSystem.GetBlockWithName("Azimuth Rotor") as IMyMotorStator;
-            _targetingBlock = GridTerminalSystem.GetBlockWithName("AI Offensive") as IMyOffensiveCombatBlock;
-            _flightBlock = GridTerminalSystem.GetBlockWithName("AI Flight") as IMyFlightMovementBlock;
+            _targetingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
+            _flightBlock = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
         }
 
@@ -49,7 +49,7 @@ namespace IngameScript
         public void Main(string argument, UpdateType updateSource)
         {
 
-            if (_flightBlock.CurrentWaypoint == null) TARGETPOS = Vector3D.Zero;
+            if (_flightBlock.CurrentWaypoint == null) return;
             else
             {
                 var v = _flightBlock.CurrentWaypoint.Matrix.GetRow(3);
@@ -81,8 +81,8 @@ namespace IngameScript
             Vector3D angLocal = (Vector3)Vector3D.TransformNormal(angularVel, Matrix.Transpose(_ref.WorldMatrix.GetOrientation()));
 
 
-            double yawRateCmd = MathHelper.Clamp(azi * PGain - angLocal.Y * DGain, -MAXRDS, MAXRDS);
-            double pitchRateCmd = MathHelper.Clamp(((_elevation.Top.WorldMatrix.Forward == _ref.WorldMatrix.Up) ? (float)ele: -(float)ele) * PGain - angLocal.X * DGain, -MAXRDS, MAXRDS);
+            double yawRateCmd = MathHelper.Clamp(-azi * PGain - angLocal.Y * DGain, -MAXRDS, MAXRDS);
+            double pitchRateCmd = MathHelper.Clamp(((_elevation.Top.WorldMatrix.Forward != _ref.WorldMatrix.Up) ? (float)ele: -(float)ele) * PGain - angLocal.X * DGain, -MAXRDS, MAXRDS);
 
             _azimuth.TargetVelocityRad = (float)yawRateCmd;
             _elevation.TargetVelocityRad = (float)pitchRateCmd;

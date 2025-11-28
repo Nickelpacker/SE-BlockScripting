@@ -1,8 +1,11 @@
-﻿using Sandbox.ModAPI.Ingame;
+﻿using EmptyKeys.UserInterface.Generated.DataTemplatesContracts_Bindings;
+using EmptyKeys.UserInterface.Generated.PlantManagementView_Bindings;
+using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI.Interfaces;
 using SpaceEngineers.Game.ModAPI.Ingame;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Text;
 using VRage.Game.ModAPI.Ingame;
@@ -26,12 +29,11 @@ namespace IngameScript
          * 
          */
 
-        public const string _date = "11.17.25";
-        public const string _version = "0.3.5-Beta";
+        public const string _date = "11.27.25";
+        public const string _version = "0.4.0";
 
 
-
-        public const string missileTag = "#A#";
+        public string missileTag;
         public string launchInfo;
 
         //Guidance Blocks
@@ -52,6 +54,7 @@ namespace IngameScript
         public int MissileRemaining;
         public int MergeRefresh;
         public static MyGridProgram Program_Local;
+        public static CustomDataConfig cfg;
 
 
 
@@ -61,17 +64,25 @@ namespace IngameScript
         {
             Me.CustomName = "Missile Control Script";
             Runtime.UpdateFrequency = UpdateFrequency.Update1;
+            
+
+            
+            MergeRefresh = 0;
+
             Program_Local = this;
+
+            CustomDataConfig.Fix();
+            cfg = new CustomDataConfig(Me.CustomData);
+            missileTag = cfg.tag;
+
             _targettingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
-
-
+            
             ALARM_sound = GridTerminalSystem.GetBlockWithName("Lock Sound Indicator") as IMySoundBlock;
             Has_Sound = ALARM_sound != null;
+            
             ALARM_light = GridTerminalSystem.GetBlockWithName("Lock Light Indicator") as IMyLightingBlock;
             Has_Light = ALARM_light != null;
-
-            MergeRefresh = 0;
 
             SETUP_OptionalBlocks();
             SETUP_ControlBlocks();
@@ -81,13 +92,14 @@ namespace IngameScript
             _targettingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
 
-
             ALARM_sound = GridTerminalSystem.GetBlockWithName("Lock Sound Indicator") as IMySoundBlock;
             Has_Sound = ALARM_sound != null;
             ALARM_light = GridTerminalSystem.GetBlockWithName("Lock Light Indicator") as IMyLightingBlock;
             Has_Light = ALARM_light != null;
 
+            cfg = new CustomDataConfig(Me.CustomData);
             MergeRefresh = 0;
+            missileTag = cfg.tag;
 
             SETUP_OptionalBlocks();
             SETUP_ControlBlocks();
@@ -115,7 +127,11 @@ namespace IngameScript
             //Arguments
             if (argument.ToLower().Trim() == "launch" && haveWaypoint) INIT_NEXT_MISSILE();
 
-            if (argument.ToLower().Trim() == "refresh") Refresh();
+            if (argument.ToLower().Trim() == "refresh")
+            {
+                Refresh();
+            }
+            if (argument.ToLower().Trim() == "fix") CustomDataConfig.Fix();
 
             if (argument.ToLower().Trim() == "dispose") DisposeAll();
 
@@ -135,6 +151,7 @@ namespace IngameScript
             }
             EchoInfo();
         }
+        #region Unsorted
         public void DisposeAll()
         {
             for (int i = 0; i < MISSILES.Count; i++)
@@ -199,7 +216,7 @@ namespace IngameScript
             _targettingBlock.TargetPriority = OffensiveCombatTargetPriority.Largest;
             _targettingBlock.SearchEnemyComponent.TargetingLockOptions = MyGridTargetingRelationFiltering.Enemy;
             _targettingBlock.SetValue<long>("OffensiveCombatIntercept_GuidanceType", 0);
-            _targettingBlock.SetValue<long>("TargetingGroup", 1);
+            _targettingBlock.SetValue<long>("TargetingGroup", 2);
             _targettingBlock.ApplyAction("ActivateBehavior_On");
 
             _flightControl.Enabled = false;
@@ -247,46 +264,77 @@ namespace IngameScript
                 return true;
             }
         }
-
+        #endregion
 
         //Give Function To Module
         public class RadarModule
         {
 
         }
-        public class Config
+        public class CustomDataConfig
         {
             private readonly string CONFIGSTRING;
             private readonly string[] CONFIGARR;
-            Config(string configStr)
+            public float dmsDistance;
+            public float proxDistance;
+            
+            public float gravAggression;
+            public float PNGain;
+
+            public string tag;
+            public CustomDataConfig(string configStr)
             {
                 CONFIGSTRING = configStr;
                 CONFIGARR = configStr.Split('\n');
-            }
-            void ParseFull()
-            {
-
-            }
-            void ParseLine(string line)
-            {
-
-            }
-            Type ParseType(string lineType)
-            {
-                Type type;
-                switch(lineType)
+                List<string> lines = new List<string>();
+                lines = CONFIGARR.ToList();
+                for(int i  = 0; i < lines.Count; i++)
                 {
-                    case "float":
-                        type = typeof(float); break;
-                    case "int":
-                        type = typeof(int); break;
-                    case "bool":
-                        type = typeof(bool); break;
-                    default:
-                        return null;
-                    
+                    var line = lines[i];
+                    if(string.IsNullOrWhiteSpace(line)) lines.Remove(line);
                 }
-                return type;
+                ParseFull(lines);
+            }
+            void ParseFull(List<string> lines)
+            {
+                foreach (var line in lines)
+                {
+                    ParseLine(line);
+                }
+            }
+            public static void Fix()
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine($"Tag=#A#\n");
+                sb.AppendLine("#Detonation Variables:");
+                sb.AppendLine($"DMS=15.0");
+                sb.AppendLine($"PROX=2.0");
+                sb.AppendLine($"\n#Guidance Variables:");
+                sb.AppendLine($"Gravity Aggression=2.5");
+                //sb.AppendLine($"PN Gain=4.0");
+                Program_Local.Me.CustomData = sb.ToString();
+            }
+            private void ParseLine(string line)
+            {
+                if (!line.Contains('=') || line.TrimStart().StartsWith("#")) return;
+                string[] lineArr = line.Split('=');
+                string name = lineArr[0].ToLower();
+                string value = lineArr[1].Trim();
+                switch(name)
+                {
+                    case "tag":
+                        tag = value; break;
+                    //case "pn gain":
+                        //PNGain = float.Parse(value); break;
+                    case "dms":
+                        dmsDistance = float.Parse(value); break;
+                    case "prox":
+                        proxDistance = float.Parse(value); break;
+                    case "gravity aggression":
+                        gravAggression = float.Parse(value); break;
+                    default:
+                        break;
+                }
             }
         }
         public class Missile
@@ -299,7 +347,7 @@ namespace IngameScript
             public List<IMyThrust> THRUSTERS = new List<IMyThrust>();
             public IMyGyro GYRO;
             public IMyShipController REMOTE;
-
+            
             //Optional Missile Blocks
             public List<IMyWarhead> WARHEADS = new List<IMyWarhead>(); //recommend warheads
             public List<IMyBatteryBlock> BATTERIES = new List<IMyBatteryBlock>();
@@ -317,9 +365,16 @@ namespace IngameScript
             private float PROX_Distance = 1.5f;
 
             //Constant Variables
-            const double PNGain = 10.0;
-            const double MinThrustPct = 0.5f;
-            const double GravityAggressiveness = 5.0;
+            public double PNGain
+            { 
+                get
+                {
+                    if (TARGETDISTANCE < 500) return MathHelper.Lerp(4.0, 1.0, (500 - TARGETDISTANCE) / 500);
+                    else return 4.5;
+                }
+            }
+            readonly double MinThrustPct = .75f;
+            readonly double GravityAggressiveness;
 
             //Launch Variables
             //const int IGNITE_DELAY = 5;
@@ -339,7 +394,6 @@ namespace IngameScript
             public bool Active = false;
 
 
-
             public double TARGETDISTANCE
             {
                 get { return Vector3D.Distance(TARGETPOS, WARHEADS[0].GetPosition()); }
@@ -352,17 +406,32 @@ namespace IngameScript
 
             public double MAXTHRUST
             {
-                get { return GetMaxThrust(THRUSTERS) / Math.Max(1.0, (REMOTE?.CalculateShipMass().TotalMass ?? 1.0)); }
+                get 
+                {
+                    float maxThrust = 0;
+                    foreach (var thruster in THRUSTERS)
+                    {
+                        maxThrust += thruster.MaxThrust;
+                    }
+                    return maxThrust / Math.Max(1.0, (REMOTE?.CalculateShipMass().TotalMass ?? 1.0)); 
+                }
             }
             #endregion
-
+            
 
             //Missile Boot
             public Missile(IMyShipMergeBlock mergeBlock, List<IMyTerminalBlock> gridViewAtLaunch)
             {
+                //PNGain = cfg.PNGain;
+                GravityAggressiveness = cfg.gravAggression;
+                DMS_Distance = cfg.dmsDistance;
+                PROX_Distance = cfg.proxDistance;
+                
                 MERGE = mergeBlock;
                 GridViewAtLaunch = gridViewAtLaunch;
                 MERGE.Enabled = false;
+
+
             }
             #region Setup
             void SETUP_FilterBlocksOnMissileGrid()
@@ -450,6 +519,7 @@ namespace IngameScript
                     if (TARGETDISTANCE <= PROX_Distance) WARHEADS[0].Detonate();
                 }
             }
+            #region Missile Guidance
             public void TurnGyro6(Vector3D _targetVector, IMyTerminalBlock _ref, IMyGyro _gyro, double _gain, double _dampingGain, double _currPitch, double _currYaw, out double _newPitch, out double _newYaw)
             {
                 _newPitch = 0;
@@ -551,16 +621,6 @@ namespace IngameScript
                 if (lateralDir.LengthSquared() > 1e-12) lateralDir = Vector3D.Normalize(lateralDir);
 
                 Vector3D aLat = lateralDir * PNGain * losRate * Vc + losDelta * 9.8 * (0.5 * PNGain);
-                /*
-                double missileAccel = Math.Max(0.1, MAXTHRUST);
-                double over = aLat.Length() / missileAccel;
-                if (over > 0.98)
-                {
-                    Vector3D cancel = Vector3D.Zero;
-                    if ((missileVel).LengthSquared() > 1e-12) cancel = Vector3D.Normalize(-missileVel);
-                    aLat = missileAccel * Vector3D.Normalize(aLat + (over * cancel) * 40.0);
-                }
-                */
                 double missileAccel = Math.Max(0.1, MAXTHRUST);
                 double aLatMag = aLat.Length();
                 if (aLatMag > missileAccel)
@@ -591,25 +651,25 @@ namespace IngameScript
                 AIMPOINT = GYRO.GetPosition() + cmdDir * 100.0;
 
                 double yaw, pitch;
-                TurnGyro6(AIMPOINT, THRUSTERS[0], GYRO, 5.0, 0.30, PREV_PITCH, PREV_YAW, out pitch, out yaw);
+                TurnGyro6(AIMPOINT, THRUSTERS[0], GYRO, 3.0, .7, PREV_PITCH, PREV_YAW, out pitch, out yaw);
                 PREV_YAW = yaw;
                 PREV_PITCH = pitch;
 
                 MIS_PREV_POS = missilePos;
                 TARGET_PREV_POS = targetPos;
-
-
-
             }
+            #endregion
         }
 
         public void EchoInfo()
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"Targetting Control: {_targettingBlock != null}");
-            sb.AppendLine($"Flight Control: {_flightControl != null}");
-            sb.AppendLine($"Missile Count: {MissileRemaining}");
-            sb.AppendLine($"Tracking: {haveWaypoint}");
+            sb.AppendLine("                  === R.E.L.O.C. ===");
+            sb.AppendLine($"Version: {_version} - Date: {_date}\n");
+            // sb.AppendLine($"Targetting Control: {_targettingBlock != null}");
+            // sb.AppendLine($"Flight Control: {_flightControl != null}");
+            sb.AppendLine($"Inactive Missile Count: {MissileRemaining}\n");
+            sb.AppendLine($"Tracking Target: {haveWaypoint}");
             sb.AppendLine($"Active Missiles: {MISSILES.Count}");
             Echo(sb.ToString());
         }
