@@ -34,7 +34,7 @@ namespace IngameScript
         public const string _version = "0.4.0";
 
 
-        public string missileTag;
+        public static string missileTag;
         public string launchInfo;
 
         //Guidance Blocks
@@ -275,7 +275,7 @@ namespace IngameScript
             private const string RECEIVE_TAG = IDENTIFIER;
             public IMyBroadcastListener RECIEVER;
             private readonly IMyIntergridCommunicationSystem IGC = Program_Local.IGC;
-            private List<Missile> MISSILES = new List<Missile>();
+            public List<Missile> MISSILES = new List<Missile>();
 
             private DataPoint receivedData;
             private struct DataPoint
@@ -312,12 +312,20 @@ namespace IngameScript
                 DataPoint data = new DataPoint();
                 if (CheckForTransmission(ref data))
                 {
-                    if (ACTIVEMISSILES > 0) return;
-
+                    receivedData = data;
+                    RunMissiles();
+                    if (ACTIVEMISSILES + MISSILES.Count >= 2) return;
                     
+                    List<IMyShipMergeBlock> merges = new List<IMyShipMergeBlock>();
+                    Program_Local?.GridTerminalSystem.GetBlocksOfType(merges, m => m.CustomName.Contains(missileTag));
+
+                    List<IMyTerminalBlock> MissileGridView = new List<IMyTerminalBlock>();
+                    Program_Local?.GridTerminalSystem.GetBlocksOfType(MissileGridView, b => b.CustomName.Contains(missileTag));
+                    if (merges.Count < 1) return;
+                    MISSILES.Add(new Missile(merges[0], MissileGridView));
                 }
             }
-            public void RunMissiles()
+            private void RunMissiles()
             {
                 if (MISSILES.Count == 0) return;
                 for (int i = 0; i < MISSILES.Count; i++)
@@ -334,10 +342,10 @@ namespace IngameScript
                     }
                 }
             }
-            public void SendTransmission()
+            public void SendTransmission(Vector3D targetPos)
             {
-                DataPoint data = new DataPoint(Vector3D.Zero);
-                IGC.SendBroadcastMessage(IDENTIFIER, data);
+                DataPoint data = new DataPoint(targetPos);
+                IGC.SendBroadcastMessage(IDENTIFIER, data, TransmissionDistance.AntennaRelay);
             }
 
             
