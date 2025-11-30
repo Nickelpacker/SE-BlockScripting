@@ -1,4 +1,5 @@
-﻿using EmptyKeys.UserInterface.Generated.DataTemplatesContracts_Bindings;
+﻿using EmptyKeys.UserInterface.Generated;
+using EmptyKeys.UserInterface.Generated.DataTemplatesContracts_Bindings;
 using EmptyKeys.UserInterface.Generated.PlantManagementView_Bindings;
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI.Interfaces;
@@ -51,6 +52,7 @@ namespace IngameScript
 
 
         public List<Missile> MISSILES = new List<Missile>();
+        public static int ACTIVEMISSILES;
         public int MissileRemaining;
         public int MergeRefresh;
         public static MyGridProgram Program_Local;
@@ -91,7 +93,6 @@ namespace IngameScript
         {
             _targettingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
-
             ALARM_sound = GridTerminalSystem.GetBlockWithName("Lock Sound Indicator") as IMySoundBlock;
             Has_Sound = ALARM_sound != null;
             ALARM_light = GridTerminalSystem.GetBlockWithName("Lock Light Indicator") as IMyLightingBlock;
@@ -121,6 +122,7 @@ namespace IngameScript
             }
             MergeRefresh++;
             Vector3D targetPos = GetMissileTarget();
+            ACTIVEMISSILES = MISSILES.Count;
 
             Alarm(haveWaypoint);
 
@@ -267,9 +269,79 @@ namespace IngameScript
         #endregion
 
         //Give Function To Module
-        public class RadarModule
+        public class RelayModule
         {
+            private const string IDENTIFIER = "Echo104";
+            private const string RECEIVE_TAG = IDENTIFIER;
+            public IMyBroadcastListener RECIEVER;
+            private readonly IMyIntergridCommunicationSystem IGC = Program_Local.IGC;
+            private List<Missile> MISSILES = new List<Missile>();
 
+            private DataPoint receivedData;
+            private struct DataPoint
+            {
+                public Vector3D transmitterPos;
+                public Vector3D contactPos;
+                public double contactDistance;
+                public DataPoint(Vector3D targPos)
+                {
+                    transmitterPos = Program_Local.Me.GetPosition(); 
+                    contactPos = targPos; 
+                    contactDistance = Vector3D.Distance(targPos, transmitterPos);
+                }
+            }
+            public RelayModule()
+            {
+                RECIEVER = IGC.RegisterBroadcastListener(RECEIVE_TAG);
+            }
+            private bool CheckForTransmission(ref DataPoint data)
+            {
+                if (RECIEVER.HasPendingMessage)
+                {
+                    MyIGCMessage msg = RECIEVER.AcceptMessage();
+                    data = (DataPoint)msg.Data;
+                    return true;
+                }
+                else 
+                {
+                    return false;
+                }
+            }
+            public void Main()
+            {
+                DataPoint data = new DataPoint();
+                if (CheckForTransmission(ref data))
+                {
+                    if (ACTIVEMISSILES > 0) return;
+
+                    
+                }
+            }
+            public void RunMissiles()
+            {
+                if (MISSILES.Count == 0) return;
+                for (int i = 0; i < MISSILES.Count; i++)
+                {
+                    Missile thisMissile = MISSILES[i];
+                    thisMissile.TARGETPOS = receivedData.contactPos;
+                    thisMissile.Check_Detonate();
+                    thisMissile.Run_Guidance();
+
+                    if (thisMissile.RequireDispose())
+                    {
+                        thisMissile.Force_Detonate();
+                        MISSILES.Remove(thisMissile);
+                    }
+                }
+            }
+            public void SendTransmission()
+            {
+                DataPoint data = new DataPoint(Vector3D.Zero);
+                IGC.SendBroadcastMessage(IDENTIFIER, data);
+            }
+
+            
+            
         }
         public class CustomDataConfig
         {
