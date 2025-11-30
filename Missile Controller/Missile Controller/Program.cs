@@ -1,6 +1,7 @@
 ﻿using EmptyKeys.UserInterface.Generated;
 using EmptyKeys.UserInterface.Generated.DataTemplatesContracts_Bindings;
 using EmptyKeys.UserInterface.Generated.PlantManagementView_Bindings;
+using Sandbox.Game.Screens;
 using Sandbox.ModAPI.Ingame;
 using Sandbox.ModAPI.Interfaces;
 using SpaceEngineers.Game.ModAPI.Ingame;
@@ -9,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Text;
+using VRage;
 using VRage.Game.ModAPI.Ingame;
 using VRageMath;
 
@@ -34,7 +36,7 @@ namespace IngameScript
         public const string _version = "0.4.0";
 
 
-        public static string missileTag;
+        public static string missileTag = "#A#";
         public string launchInfo;
 
         //Guidance Blocks
@@ -49,14 +51,17 @@ namespace IngameScript
         public bool Has_Light;
 
         public bool ALARM_active;
+        public bool RELAY_active;
 
 
         public List<Missile> MISSILES = new List<Missile>();
         public static int ACTIVEMISSILES;
         public int MissileRemaining;
         public int MergeRefresh;
+        
         public static MyGridProgram Program_Local;
         public static CustomDataConfig cfg;
+        public static RelayModule relay;
 
 
 
@@ -76,7 +81,9 @@ namespace IngameScript
             CustomDataConfig.Fix();
             cfg = new CustomDataConfig(Me.CustomData);
             missileTag = cfg.tag;
-
+            RELAY_active = cfg.IsRelay;
+            if (RELAY_active) relay = new RelayModule(cfg.networkName);
+            
             _targettingBlock = GridTerminalSystem.GetBlockWithName("AI Targetting Control") as IMyOffensiveCombatBlock;
             _flightControl = GridTerminalSystem.GetBlockWithName("AI Flight Control") as IMyFlightMovementBlock;
             
@@ -101,7 +108,11 @@ namespace IngameScript
             cfg = new CustomDataConfig(Me.CustomData);
             MergeRefresh = 0;
             missileTag = cfg.tag;
-
+            List<IMyRadioAntenna> temp = new List<IMyRadioAntenna>();
+            GridTerminalSystem.GetBlocksOfType(temp, t => t.IsFunctional);
+            RELAY_active = (temp.Count > 0) && cfg.IsRelay;
+            if (RELAY_active) relay = new RelayModule(cfg.networkName);
+            
             SETUP_OptionalBlocks();
             SETUP_ControlBlocks();
         }
@@ -151,6 +162,7 @@ namespace IngameScript
                     MISSILES.Remove(thisMissile);
                 }
             }
+            relay.Main();
             EchoInfo();
         }
         #region Unsorted
@@ -172,7 +184,8 @@ namespace IngameScript
                 target = new Vector3D(translation.X, translation.Y, translation.Z);
 
                 haveWaypoint = true;
-
+                relay.SendTransmission(target);
+                
                 return target;
             }
             else
@@ -268,14 +281,12 @@ namespace IngameScript
         }
         #endregion
 
-        //Give Function To Module
         public class RelayModule
         {
-            private const string IDENTIFIER = "Echo104";
-            private const string RECEIVE_TAG = IDENTIFIER;
-            public IMyBroadcastListener RECIEVER;
+            private readonly string IDENTIFIER = "";
+            private readonly IMyBroadcastListener RECIEVER;
             private readonly IMyIntergridCommunicationSystem IGC = Program_Local.IGC;
-            public List<Missile> MISSILES = new List<Missile>();
+            private List<Missile> MISSILES = new List<Missile>();
 
             private DataPoint receivedData;
             private struct DataPoint
@@ -290,16 +301,22 @@ namespace IngameScript
                     contactDistance = Vector3D.Distance(targPos, transmitterPos);
                 }
             }
-            public RelayModule()
+            public RelayModule(string network)
             {
-                RECIEVER = IGC.RegisterBroadcastListener(RECEIVE_TAG);
+                IDENTIFIER = network;
+                RECIEVER = IGC.RegisterBroadcastListener(IDENTIFIER);
             }
             private bool CheckForTransmission(ref DataPoint data)
             {
                 if (RECIEVER.HasPendingMessage)
                 {
+                    MyTuple<Vector3D, Vector3D, double> dataT = new MyTuple<Vector3D, Vector3D, double>();
                     MyIGCMessage msg = RECIEVER.AcceptMessage();
-                    data = (DataPoint)msg.Data;
+                    dataT = (MyTuple<Vector3D, Vector3D, double>)msg.Data;
+                    data.transmitterPos = dataT.Item1;
+                    data.contactPos = dataT.Item2;
+                    data.contactDistance = dataT.Item3;
+                    
                     return true;
                 }
                 else 
@@ -323,7 +340,7 @@ namespace IngameScript
                     Program_Local?.GridTerminalSystem.GetBlocksOfType(MissileGridView, b => b.CustomName.Contains(missileTag));
                     if (merges.Count < 1) return;
                     MISSILES.Add(new Missile(merges[0], MissileGridView));
-                }
+                }                
             }
             private void RunMissiles()
             {
@@ -345,11 +362,16 @@ namespace IngameScript
             public void SendTransmission(Vector3D targetPos)
             {
                 DataPoint data = new DataPoint(targetPos);
-                IGC.SendBroadcastMessage(IDENTIFIER, data, TransmissionDistance.AntennaRelay);
-            }
+                MyTuple<Vector3D, Vector3D, double> dataT = new MyTuple<Vector3D, Vector3D, double>
+                {
+                    Item1 = data.transmitterPos,
+                    Item2 = data.contactPos,
+                    Item3 = data.contactDistance
+                };
 
-            
-            
+                    
+                IGC.SendBroadcastMessage(IDENTIFIER, dataT, TransmissionDistance.AntennaRelay);
+            }           
         }
         public class CustomDataConfig
         {
@@ -361,7 +383,11 @@ namespace IngameScript
             public float gravAggression;
             public float PNGain;
 
+            public bool IsRelay;
+            public string networkName;
+
             public string tag;
+            
             public CustomDataConfig(string configStr)
             {
                 CONFIGSTRING = configStr;
@@ -391,6 +417,9 @@ namespace IngameScript
                 sb.AppendLine($"PROX=2.0");
                 sb.AppendLine($"\n#Guidance Variables:");
                 sb.AppendLine($"Gravity Aggression=2.5");
+                sb.AppendLine($"\n#Communication Variables:");
+                sb.AppendLine($"Active Relay=True");
+                sb.AppendLine($"Network Name=#RELOC#");
                 //sb.AppendLine($"PN Gain=4.0");
                 Program_Local.Me.CustomData = sb.ToString();
             }
@@ -412,6 +441,10 @@ namespace IngameScript
                         proxDistance = float.Parse(value); break;
                     case "gravity aggression":
                         gravAggression = float.Parse(value); break;
+                    case "active relay":
+                        IsRelay = Boolean.Parse(value); break;
+                    case "network name":
+                        networkName = value; break;
                     default:
                         break;
                 }
@@ -441,8 +474,8 @@ namespace IngameScript
             public bool ISTRACKING;
 
             //Detonation Variables
-            private float DMS_Distance = 25;
-            private float PROX_Distance = 1.5f;
+            private readonly float DMS_Distance = 25;
+            private readonly float PROX_Distance = 1.5f;
 
             //Constant Variables
             public double PNGain
